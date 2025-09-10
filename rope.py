@@ -62,7 +62,7 @@ def apply_rotary_emb(
     # query_real contains q_1, q_3, q_5, ... and query_imag contains q_2, q_4, q_6, ...
 
     # First, compute the trigonometric values in the second and fourth columns in
-    # slide 22 (linked above).
+    # slide 49 (linked above).
 
     # Then, combine these trigonometric values with the tensors query_real, query_imag,
     # key_real, and key_imag.
