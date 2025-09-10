@@ -23,7 +23,6 @@
 - [ ] Complete CFIMDB fine-tuning
 - [ ] Complete SST LoRA fine-tuning
 - [ ] Complete CFIMDB LoRA fine-tuning
-- [ ] Achieve target accuracies (±0.05 for SST, ±0.15 for CFIMDB)
 
 ### Advanced Features (Optional - A+)
 - [ ] Other advanced techniques (see A+ options above)

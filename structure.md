@@ -79,7 +79,7 @@ You also need to add support for gradient clipping. We suggest to explore differ
 You can check your optimizer implementation using `optimizer_test.py`.
 
 ## rope.py (to be implemented)
-Here, you will implement rotary positional embeddings. This may be tricky; you can refer to lecture 5 in https://cmu-l3.github.io/anlp-fall2025/ and Section 3 in https://arxiv.org/abs/2104.09864 for reference. To enable you to test this component modularly, we've provided a unit test at `RoPE_test.py`
+Here, you will implement rotary positional embeddings. This may be tricky; you can refer to lecture 5 in https://cmu-l3.github.io/anlp-fall2025/static_files/anlp-f2025-05-transformers.pdf/ and Section 3 in https://arxiv.org/abs/2104.09864 for reference. To enable you to test this component modularly, we've provided a unit test at `RoPE_test.py`
 
 ## lora.py (to be implemented)
 Here implement the forward pass for LoRA layer you can refer to the lecture slides for LoRA.  and the [paper] (https://arxiv.org/abs/2106.09685) 

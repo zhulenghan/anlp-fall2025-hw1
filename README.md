@@ -6,7 +6,7 @@
 
 **Acknowledgement:** This assignment is based on the corresponding assignment from Fall 2024 and the previous version by Vijay Viswanathan (based on the [minbert-assignment](https://github.com/neubig/minbert-assignment)).
 
-This is an exercise in developing a minimalist version of Llama2, part of Carnegie Mellon University's [CS11-711 Advanced NLP](https://cmu-l3.github.io/anlp-fall2025/). See the course website for the [assignment writeup](https://cmu-l3.github.io/anlp-fall2025/assignment1).
+This is an exercise in developing a minimalist version of Llama2, part of Carnegie Mellon University's [CS11-711 Advanced NLP](https://cmu-l3.github.io/anlp-fall2025/). See the course website for the [assignment writeup](https://cmu-l3.github.io/anlp-fall2025/assignments/assignment1).
 
 ## Overview
 
