@@ -87,7 +87,7 @@ python run_llama.py --option finetune --epochs 5 --lr 2e-5 --batch_size 80 --tra
 python run_llama.py --option finetune --epochs 5 --lr 2e-5 --batch_size 10 --train data/cfimdb-train.txt --dev data/cfimdb-dev.txt --test data/cfimdb-test.txt --label-names data/cfimdb-label-mapping.json --dev_out cfimdb-dev-finetuning-output.txt --test_out cfimdb-test-finetuning-output.txt [--use_gpu]
 ```
 - Dev Accuracy: 0.833 (0.060)
-- Test Accuracy: 0.473 (0.198)
+- Test Accuracy: 0.473 
 
 ### LoRA Fine-tuning
 
@@ -105,12 +105,29 @@ python run_llama.py --option lora --epochs 5 --lr 2e-5 --batch_size 10 --train d
 - Dev Accuracy: 0.510 (0.051)
 - Test Accuracy: 0.506 (0.239)
 
-*Note: Mean reference accuracies over 10 random seeds with standard deviations in brackets. Gradient clipping was not employed.*
+*Note: Mean reference accuracies over 10 random seeds with standard deviations in brackets.*
 
 ## Submission Requirements
 
-### File Structure
-Submit a zip file with the following structure (replace `ANDREWID` with your Andrew ID):
+### Submission Guidelines
+
+**Code:**
+You will submit a full code package, with output files, on **Canvas**. This package will be checked by the TAs in the 1-2 weeks 
+   after the assignment for its correctness and executability. **Your submission file should strictly be within 10MB**, any model weights (if needed for advanced implementation) need to be hosted on your own drive with link shared in the report. Files not adhering to the limit will be graded down by a third of grade.
+
+**Report (optional; mandatory for A+ consideration):** Your zip file can include a pdf file, named ANDREWID-report.pdf, if (1) you've implemented something else on top of the requirements and further improved accuracy for possible extra points (see "Grading" below), and/or (2) if your best results are with some hyperparameters other than the default, and you want to specify how we should run your code. If you're doing (1), we expect your report should be 1-2 pages, but no more than 3 pages. If you're doing (2), the report can be very brief.
+
+**Feedback (optional):**
+We also request you to provide your feedback (in a feedback.txt file) to improve the course assignments for the future offerings. Possible points could be (a) how easy/difficult you found this assignment?; (b) what component of the assignment was hard to understand?; (c) anything we can improve for the future offerings?
+
+
+
+
+#### Canvas Submission
+
+For submission via [Canvas](https://canvas.cmu.edu/courses/50103/assignments/892825),
+the submission file should be a zip file with the following structure (assuming the
+lowercase Andrew ID is ``ANDREWID``):
 
 ```
 ANDREWID/
@@ -151,17 +168,20 @@ ANDREWID/
 └── setup.sh
 ```
 
-### Submission Guidelines
 
-- **File size limit**: 10MB maximum
-- **Model weights**: Host separately and provide links in report if needed
-- **Validation**: Use `prepare_submit.py` to create and validate your submission
-- **Format compliance**: Improper format results in 1/3 grade reduction
+`prepare_submit.py` can help to create(1) or check(2) the to-be-submitted zip file. It
+will throw assertion errors if the format is not expected, and *submissions that fail
+this check will be graded down*.
 
-### Reports and Feedback
+Usage:
+1. To create and check a zip file with your outputs, run
+   `python3 prepare_submit.py path/to/your/output/dir ANDREWID`
+2. To check your zip file, run
+   `python3 prepare_submit.py path/to/your/submit/zip/file.zip ANDREWID`
 
-- **Report**: Optional unless pursuing A+ (mandatory for A+). 1-3 pages maximum.
-- **Feedback**: Optional `feedback.txt` to help improve future assignments
+Please double check this before you submit to Canvas; most recently we had about 10/100
+students lose a 1/3 letter grade because of an improper submission format.
+
 
 ### Grading
 
