@@ -87,7 +87,7 @@ python run_llama.py --option finetune --epochs 5 --lr 2e-5 --batch_size 80 --tra
 python run_llama.py --option finetune --epochs 5 --lr 2e-5 --batch_size 10 --train data/cfimdb-train.txt --dev data/cfimdb-dev.txt --test data/cfimdb-test.txt --label-names data/cfimdb-label-mapping.json --dev_out cfimdb-dev-finetuning-output.txt --test_out cfimdb-test-finetuning-output.txt [--use_gpu]
 ```
 - Dev Accuracy: 0.833 (0.060)
-- Test Accuracy: 0.473 
+- Test Accuracy: 0.473 (0.198)
 
 ### LoRA Fine-tuning
 
