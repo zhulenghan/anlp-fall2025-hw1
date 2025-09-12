@@ -197,9 +197,9 @@ students lose a 1/3 letter grade because of an improper submission format.
    * Add other model components on top of the model
    * Implement alternative attention mechanisms such as sparse attention, [Differential Transformer](https://arxiv.org/pdf/2410.05258), or other attention variants that improve model performance compared to standard attention.
 
-* **A**: You implement all the missing pieces and the original `classifier.py` with `--option prompt` and `--option finetune` code such that coherent text (i.e. mostly grammatically well-formed) can be generated and the model achieves comparable accuracy (within 0.05 accuracy for SST or 0.15 accuracy for CFIMDB) to our reference implementation.
+* **A**: You implement all the missing pieces and the original `classifier.py` and  `lora.py`  with `--option prompt`, `--option finetune` and `--option lora` code such that coherent text (i.e. mostly grammatically well-formed) can be generated and the model achieves comparable accuracy to our reference implementation.
 
-* **A-**: You implement all the missing pieces and the original `classifier.py` with `--option prompt` and `--option finetune` code, but coherent text is not generated (i.e. generated text is not well-formed English) or accuracy is not comparable to the reference (accuracy is more than 0.05 accuracy or 0.15 accuracy from our reference scores for SST and CFIMDB, respectively).
+* **A-**: You implement all the missing pieces and the original `classifier.py` and  `lora.py`  with `--option prompt`, `--option finetune` and `--option lora` code, but coherent text is not generated (i.e. generated text is not well-formed English) or accuracy is not comparable to the reference.
 
 * **B+**: All missing pieces are implemented and pass tests in `sanity_check.py` (llama implementation) and `optimizer_test.py` (optimizer implementation).
 
