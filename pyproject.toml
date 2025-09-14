@@ -1,0 +1,29 @@
+[project]
+name = "anlp-fall2025-hw1"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "torch==2.1.2",
+    "torchvision==0.16.2",
+    "torchaudio==2.1.2",
+    "filelock==3.0.12",
+    "importlib-metadata==3.7.0",
+    "numpy==1.26.3",
+    "requests==2.31.0",
+    "scikit-learn==1.2.2",
+    "sentencepiece==0.1.99",
+    "tokenizers==0.13.3",
+    "tqdm==4.66.1",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu118" }
+torchvision = { index = "pytorch-cu118" }
+torchaudio = { index = "pytorch-cu118" }
