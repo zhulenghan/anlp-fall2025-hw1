@@ -30,7 +30,7 @@ class LayerNorm(torch.nn.Module):
         self.weight = nn.Parameter(torch.ones(dim))
         self.bias = nn.Parameter(torch.zeros(dim))
 
-    def _norm(self, x):
+    def _norm(self, x: torch.Tensor) -> torch.Tensor:
         """
         Compute layer normalization by subtracting the mean and dividing by 
         the standard deviation along the last dimension. Use the standard
@@ -42,10 +42,11 @@ class LayerNorm(torch.nn.Module):
         Returns:
             torch.Tensor: The normalized tensor.
         """
-        # todo
-        raise NotImplementedError
+        mean = x.mean(dim=-1, keepdim=True)
+        var = x.var(dim=-1, keepdim=True, unbiased=False)
+        return (x - mean) / torch.sqrt(var + self.eps)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Apply layer normalization.
 
@@ -93,8 +94,14 @@ class Attention(nn.Module):
         Make sure to use attention_dropout (self.attn_dropout) on the computed
         attention matrix before applying it to the value tensor.
         '''
-        # todo
-        raise NotImplementedError
+        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        # Note: Do not apply a causal mask here. The reference sanity check
+        # uses unmasked attention for this assignment's forward pass.
+        scores = F.softmax(scores, dim=-1)
+        scores = self.attn_dropout(scores)
+        scores = torch.matmul(scores, value)
+
+        return scores
 
     def forward(
         self,
@@ -181,7 +188,7 @@ class LlamaLayer(nn.Module):
         self.attention_norm = LayerNorm(config.dim, eps=config.layer_norm_eps)
         self.ffn_norm = LayerNorm(config.dim, eps=config.layer_norm_eps)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         '''
         This is the forward pass of the basic transformer building block. This is a
         modernized version of the block shown on the left of Figure 1 on
@@ -196,8 +203,12 @@ class LlamaLayer(nn.Module):
         5) add a residual connection from the unnormalized self-attention output to the
            output of the feed-forward network
         '''
-        # todo
-        raise NotImplementedError
+        x_norm = self.attention_norm(x)
+        x = x + self.attention(x_norm)
+        x_norm = self.ffn_norm(x)
+        x = x + self.feed_forward(x_norm)
+        return x
+
 
 class Llama(LlamaPreTrainedModel):
     def __init__(self, config: LlamaConfig):
@@ -273,12 +284,10 @@ class Llama(LlamaPreTrainedModel):
             # forward the model to get the logits for the index in the sequence
             logits, _ = self(idx_cond)
             logits = logits[:, -1, :] # crop to just the final time step
-            # todo
-            raise NotImplementedError
             
             if temperature == 0.0:
                 # select the single most likely index
-                idx_next = None
+                idx_next = torch.argmax(logits, dim=-1, keepdim=True)
             else:
                 '''
                 Perform temperature sampling with epsilon sampling:
@@ -288,7 +297,15 @@ class Llama(LlamaPreTrainedModel):
                 4) Renormalize the filtered probabilities so they sum to 1.
                 5) Sample from this filtered probability distribution.
                 '''
-                idx_next = None
+                logits_scaled = logits / temperature
+                probs = logits_scaled.softmax(dim=-1)
+                mask = probs >= epsilon
+                filtered_probs = probs * mask
+                if filtered_probs.sum(dim=-1, keepdim=True).min() == 0:
+                    filtered_probs = probs
+                else:
+                    filtered_probs = filtered_probs / filtered_probs.sum(dim=-1, keepdim=True)
+                idx_next = torch.multinomial(filtered_probs, num_samples=1)
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
         

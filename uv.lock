@@ -17,6 +17,7 @@ dependencies = [
     { name = "requests" },
     { name = "scikit-learn" },
     { name = "sentencepiece" },
+    { name = "setuptools" },
     { name = "tokenizers" },
     { name = "torch" },
     { name = "torchaudio", version = "2.1.2", source = { registry = "https://download.pytorch.org/whl/cu118" }, marker = "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'" },
@@ -34,6 +35,7 @@ requires-dist = [
     { name = "requests", specifier = "==2.31.0" },
     { name = "scikit-learn", specifier = "==1.2.2" },
     { name = "sentencepiece", specifier = "==0.1.99" },
+    { name = "setuptools", specifier = "<81" },
     { name = "tokenizers", specifier = "==0.13.3" },
     { name = "torch", specifier = "==2.1.2", index = "https://download.pytorch.org/whl/cu118" },
     { name = "torchaudio", specifier = "==2.1.2", index = "https://download.pytorch.org/whl/cu118" },
@@ -468,6 +470,15 @@ wheels = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "80.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/18/5d/3bf57dcd21979b887f014ea83c24ae194cfcd12b9e0fda66b957c69d1fca/setuptools-80.9.0.tar.gz", hash = "sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c", size = 1319958, upload-time = "2025-05-27T00:56:51.443Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl", hash = "sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922", size = 1201486, upload-time = "2025-05-27T00:56:49.664Z" },
+]
+
+[[package]]
 name = "sympy"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -603,7 +614,7 @@ name = "triton"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "filelock" },
+    { name = "filelock", marker = "python_full_version >= '3.12' or platform_machine != 'aarch64' or platform_python_implementation != 'CPython' or sys_platform != 'linux'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/c1/54fffb2eb13d293d9a429fead3646752ea190de0229bcf3d591ba2481263/triton-2.1.0-0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:919b06453f0033ea52c13eaf7833de0e57db3178d23d4e04f9fc71c4f2c32bf8", size = 89234153, upload-time = "2023-09-01T07:26:20.161Z" },

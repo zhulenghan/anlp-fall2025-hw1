@@ -16,6 +16,7 @@ dependencies = [
     "sentencepiece==0.1.99",
     "tokenizers==0.13.3",
     "tqdm==4.66.1",
+    "setuptools<81",
 ]
 
 [[tool.uv.index]]
