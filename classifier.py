@@ -12,6 +12,7 @@ class LlamaZeroShotClassifier(torch.nn.Module):
 		super(LlamaZeroShotClassifier, self).__init__()
 		self.num_labels = config.num_labels
 		self.llama = load_pretrained(config.pretrained_model_path)
+		self.llama.config.use_causal_mask = True
 		# Zero-shot classification does not require updating llama paramters.
 		for param in self.llama.parameters():
 			param.requires_grad = False
@@ -35,6 +36,7 @@ class LlamaEmbeddingClassifier(torch.nn.Module):
 		super(LlamaEmbeddingClassifier, self).__init__()
 		self.num_labels = config.num_labels
 		self.llama = load_pretrained(config.pretrained_model_path)
+		self.llama.config.use_causal_mask = True
 		# If we use pretrain mode, we freeze Llama parameters.
 		for param in self.llama.parameters():
 			if config.option == 'pretrain':

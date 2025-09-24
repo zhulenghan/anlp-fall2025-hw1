@@ -284,8 +284,15 @@ class Llama(LlamaPreTrainedModel):
             # if we are given some desired targets also calculate the loss
             logits = self.output(h)
         else:
-            # inference-time mini-optimization: only forward the output on the very last position
-            logits = self.output(h[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            # inference-time mini-optimization: only forward the output on the final non-pad position
+            if padding_mask is not None:
+                # padding_mask uses 1 for real tokens, 0 for padding
+                lengths = padding_mask.sum(dim=1).clamp(min=1).to(device=tokens.device, dtype=torch.long) - 2
+                gather_index = lengths.view(-1, 1, 1).expand(-1, 1, h.size(-1))
+                last_hidden = h.gather(1, gather_index)
+                logits = self.output(last_hidden)
+            else:
+                logits = self.output(h[:, [-1], :])  # keep original fast path when no mask is provided
 
         return logits, h
 
