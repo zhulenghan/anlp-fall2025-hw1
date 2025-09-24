@@ -17,6 +17,7 @@ dependencies = [
     "tokenizers==0.13.3",
     "tqdm==4.66.1",
     "setuptools<81",
+    "huggingface-hub>=0.35.1",
 ]
 
 [[tool.uv.index]]

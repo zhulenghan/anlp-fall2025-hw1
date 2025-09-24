@@ -53,15 +53,19 @@ class LlamaDataset(Dataset):
 		token_ids = torch.LongTensor(encoding_padded)
 		labels = torch.LongTensor(labels)
 
-		return token_ids, labels, sents
+		# Generate padding mask (1 = valid token, 0 = padding)
+		padding_mask = (token_ids != self.tokenizer.pad_id).long()
+
+		return token_ids, labels, sents, padding_mask
 
 	def collate_fn(self, all_data):
 
-		token_ids, labels, sents = self.pad_data(all_data)
+		token_ids, labels, sents, padding_mask = self.pad_data(all_data)
 		batched_data = {
 				'token_ids': token_ids,
 				'labels': labels,
 				'sents': sents,
+				'padding_mask': padding_mask,
 			}
 
 		return batched_data
@@ -100,10 +104,13 @@ def model_eval(dataloader, model, device):
 	sents = []
 	for step, batch in enumerate(tqdm(dataloader, desc=f'eval', disable=TQDM_DISABLE)):
 		b_ids, b_labels, b_sents = batch['token_ids'], batch['labels'], batch['sents']
+		b_mask = batch.get('padding_mask', None)
 
 		b_ids = b_ids.to(device)
+		if b_mask is not None:
+			b_mask = b_mask.to(device)
 
-		logits = model(b_ids)
+		logits = model(b_ids, b_mask)
 		logits = logits.detach().cpu().numpy()
 		preds = np.argmax(logits, axis=1).flatten()
 
@@ -190,12 +197,15 @@ def train(args):
 		num_batches = 0
 		for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
 			b_ids, b_labels, b_sents = batch['token_ids'], batch['labels'], batch['sents']
+			b_mask = batch.get('padding_mask', None)
 
 			b_ids = b_ids.to(device)
 			b_labels = b_labels.to(device)
+			if b_mask is not None:
+				b_mask = b_mask.to(device)
 
 			optimizer.zero_grad()
-			logits = model(b_ids)
+			logits = model(b_ids, b_mask)
 			loss = F.nll_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 			loss.backward()
@@ -270,12 +280,15 @@ def train_lora(args):
 		num_batches = 0
 		for step, batch in enumerate(tqdm(train_dataloader, desc=f'lora-train-{epoch}', disable=TQDM_DISABLE)):
 			b_ids, b_labels, b_sents = batch['token_ids'], batch['labels'], batch['sents']
+			b_mask = batch.get('padding_mask', None)
 
 			b_ids = b_ids.to(device)
 			b_labels = b_labels.to(device)
+			if b_mask is not None:
+				b_mask = b_mask.to(device)
 
 			optimizer.zero_grad()
-			logits = model(b_ids)
+			logits = model(b_ids, b_mask)
 			loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 			loss.backward()

@@ -79,11 +79,20 @@ class Attention(nn.Module):
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
         self.dropout = config.dropout
+        self.config = config
+
+        # Always create the causal mask buffer
+        self.register_buffer(
+            "causal_mask",
+            torch.tril(torch.ones(config.max_seq_len, config.max_seq_len))
+            .view(1, 1, config.max_seq_len, config.max_seq_len)
+        )
 
     def compute_query_key_value_scores(self,
                                        query: torch.Tensor,
                                        key: torch.Tensor,
-                                       value: torch.Tensor) -> torch.Tensor:
+                                       value: torch.Tensor,
+                                       padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         '''
         Jointly compute Scaled Dot Product Attention (see Section 3.2.1 in
         https://arxiv.org/abs/1706.03762 for details). The query, key, and
@@ -95,8 +104,20 @@ class Attention(nn.Module):
         attention matrix before applying it to the value tensor.
         '''
         scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.head_dim)
-        # Note: Do not apply a causal mask here. The reference sanity check
-        # uses unmasked attention for this assignment's forward pass.
+
+        # Build combined mask
+        seq_len = query.size(2)
+        mask = torch.ones(1, 1, seq_len, seq_len, device=query.device)
+
+        # Check config dynamically for causal mask
+        if self.config.use_causal_mask:
+            mask = mask * self.causal_mask[:, :, :seq_len, :seq_len]
+
+        if padding_mask is not None:
+            padding_mask = padding_mask.view(query.size(0), 1, 1, seq_len)
+            mask = mask * padding_mask
+
+        scores = scores.masked_fill(mask == 0, float("-inf"))
         scores = F.softmax(scores, dim=-1)
         scores = self.attn_dropout(scores)
         scores = torch.matmul(scores, value)
@@ -105,7 +126,8 @@ class Attention(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor
+        x: torch.Tensor,
+        padding_mask: Optional[torch.Tensor] = None
     ):
         '''
         Llama2 uses Grouped-Query Attention. The details of GQA are actually
@@ -138,7 +160,7 @@ class Attention(nn.Module):
         query = query.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         key = key.transpose(1, 2)
         value = value.transpose(1, 2)
-        output = self.compute_query_key_value_scores(query, key, value)
+        output = self.compute_query_key_value_scores(query, key, value, padding_mask)
 
         # restore time as batch dimension and concat heads
         output = output.transpose(1, 2).contiguous().view(batch_size, seqlen, -1)
@@ -188,14 +210,14 @@ class LlamaLayer(nn.Module):
         self.attention_norm = LayerNorm(config.dim, eps=config.layer_norm_eps)
         self.ffn_norm = LayerNorm(config.dim, eps=config.layer_norm_eps)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         '''
         This is the forward pass of the basic transformer building block. This is a
         modernized version of the block shown on the left of Figure 1 on
         https://arxiv.org/pdf/1706.03762.pdf.
 
         The transformer block should consist of:
-        1) layer normalization of the input 
+        1) layer normalization of the input
         2) self-attention on the layer-normalized input
         3) a residual connection (i.e., add the input to the output of the self-attention)
         3) layer normalization on the output of the self-attention
@@ -204,7 +226,7 @@ class LlamaLayer(nn.Module):
            output of the feed-forward network
         '''
         x_norm = self.attention_norm(x)
-        x = x + self.attention(x_norm)
+        x = x + self.attention(x_norm, padding_mask)
         x_norm = self.ffn_norm(x)
         x = x + self.feed_forward(x_norm)
         return x
@@ -249,13 +271,13 @@ class Llama(LlamaPreTrainedModel):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, tokens: torch.Tensor, targets: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, tokens: torch.Tensor, targets: Optional[torch.Tensor] = None, padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         _batch_size, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         h = self.dropout(h)
 
         for layer in self.layers:
-            h = layer(h)
+            h = layer(h, padding_mask)
         h = self.norm(h)
 
         if targets is not None:
@@ -278,6 +300,7 @@ class Llama(LlamaPreTrainedModel):
         Also note this is a super inefficient version of sampling with no key/value cache, 
         but you are free to add any optimizations on top of this.
         """
+        eos_id = getattr(self.params, 'eos_token_id', None)
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
             idx_cond = idx if idx.size(1) <= self.params.max_seq_len else idx[:, -self.params.max_seq_len:]
@@ -308,8 +331,209 @@ class Llama(LlamaPreTrainedModel):
                 idx_next = torch.multinomial(filtered_probs, num_samples=1)
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
+            # Stop when EOS is generated (if configured)
+            if eos_id is not None:
+                # If every batch element produced EOS, stop generation
+                if (idx_next == eos_id).all():
+                    break
         
         return idx
+
+    @torch.inference_mode()
+    def decode(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        top_k: int = 0,
+        repetition_penalty: float = 1.0,
+    ) -> torch.Tensor:
+        """
+        Sampling-based decoder that supports temperature, top-p (nucleus), top-k,
+        and repetition penalty. Works without KV cache for simplicity.
+
+        Args:
+            idx: LongTensor of shape (batch, seqlen) of context token ids.
+            max_new_tokens: Number of tokens to generate.
+            temperature: Sampling temperature (> 0 for sampling, 0 for greedy).
+            top_p: Nucleus sampling threshold in (0, 1]. Set to 1.0 to disable.
+            top_k: Keep only top-k logits before softmax. Set 0 to disable.
+            repetition_penalty: >1.0 to penalize previously generated tokens.
+        Returns:
+            LongTensor of shape (batch, seqlen + max_new_tokens).
+        """
+        assert max_new_tokens >= 0
+        eos_id = getattr(self.params, 'eos_token_id', None)
+        batch_size = idx.size(0)
+        vocab_size = self.vocab_size
+
+        for _ in range(max_new_tokens):
+            # Crop context to model's max sequence length
+            if idx.size(1) > self.params.max_seq_len:
+                idx_cond = idx[:, -self.params.max_seq_len:]
+            else:
+                idx_cond = idx
+
+            # Forward to get next-token logits (shape: B, 1, V)
+            logits, _ = self(idx_cond)
+            logits = logits[:, -1, :]  # (B, V)
+
+            # Greedy path if temperature <= 0
+            if temperature is not None and temperature <= 0:
+                idx_next = torch.argmax(logits, dim=-1, keepdim=True)
+                idx = torch.cat((idx, idx_next), dim=1)
+                continue
+
+            # Repetition penalty (penalize tokens that appear in the context)
+            if repetition_penalty is not None and repetition_penalty != 1.0:
+                rep = float(repetition_penalty)
+                for b in range(batch_size):
+                    prev_tokens = idx[b].unique()
+                    selected = logits[b, prev_tokens]
+                    pos = selected > 0
+                    # For positive logits, divide; for negative, multiply
+                    selected[pos] = selected[pos] / rep
+                    selected[~pos] = selected[~pos] * rep
+                    logits[b, prev_tokens] = selected
+
+            # Temperature scaling
+            if temperature is not None and temperature != 1.0:
+                logits = logits / float(temperature)
+
+            # Top-k filtering on logits
+            if top_k is not None and top_k > 0 and top_k < vocab_size:
+                kth_vals, _ = torch.topk(logits, k=top_k, dim=-1)
+                kth = kth_vals[:, -1].unsqueeze(-1)
+                logits = torch.where(logits < kth, torch.full_like(logits, float('-inf')), logits)
+
+            # Convert to probabilities
+            probs = F.softmax(logits, dim=-1)
+
+            # Top-p (nucleus) sampling on probabilities
+            if top_p is not None and 0.0 < top_p < 1.0:
+                sorted_probs, sorted_idx = torch.sort(probs, dim=-1, descending=True)
+                cumsum = torch.cumsum(sorted_probs, dim=-1)
+                # Mask tokens where cumulative prob exceeds top_p, but always keep at least one
+                mask = cumsum > float(top_p)
+                # Shift mask right to keep the first token above threshold
+                mask[:, 1:] = mask[:, :-1].clone()
+                mask[:, 0] = False
+                sorted_probs = torch.where(mask, torch.zeros_like(sorted_probs), sorted_probs)
+                # Scatter back to original indices
+                probs = torch.zeros_like(probs).scatter(-1, sorted_idx, sorted_probs)
+                # Renormalize to sum to 1 per row; if zero, fall back to original softmax
+                sums = probs.sum(dim=-1, keepdim=True)
+                probs = torch.where(sums > 0, probs / sums, F.softmax(logits, dim=-1))
+
+            # Sample the next token
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, idx_next), dim=1)
+            # Stop when EOS is generated (if configured)
+            if eos_id is not None:
+                if (idx_next == eos_id).all():
+                    break
+
+        return idx
+
+    @torch.inference_mode()
+    def beam_search(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        num_beams: int = 4,
+        length_penalty: float = 1.0,
+        repetition_penalty: float = 1.0,
+    ) -> torch.Tensor:
+        """
+        Basic beam search decoder (no KV cache). Stops when EOS appears. Supports batch_size=1.
+
+        Args:
+            idx: LongTensor (1, seqlen) initial context.
+            max_new_tokens: maximum tokens to generate.
+            num_beams: number of beams to maintain.
+            length_penalty: >1.0 favors shorter sequences, <1.0 favors longer.
+            repetition_penalty: >1.0 penalizes previously generated tokens.
+        Returns:
+            LongTensor with the best decoded sequence (shape (1, <= seqlen+max_new_tokens)).
+        """
+        assert idx.size(0) == 1, "beam_search currently supports batch_size=1"
+        device = idx.device
+        eos_id = getattr(self.params, 'eos_token_id', None)
+
+        # Each beam: (tokens (Tensor), sum_logprobs (float), length (int))
+        beams = [(idx.clone(), 0.0, idx.size(1))]
+        finished = []  # list of tuples as above
+
+        def apply_rep_penalty(logits: torch.Tensor, tokens: torch.Tensor) -> torch.Tensor:
+            if repetition_penalty is None or repetition_penalty == 1.0:
+                return logits
+            rep = float(repetition_penalty)
+            uniq = tokens.view(-1).unique()
+            sel = logits[uniq]
+            pos = sel > 0
+            sel[pos] = sel[pos] / rep
+            sel[~pos] = sel[~pos] * rep
+            logits[uniq] = sel
+            return logits
+
+        def norm_score(sum_logprobs: float, length: int) -> float:
+            # GNMT length penalty: ((5+len)/6)^alpha ; here alpha=length_penalty
+            if length_penalty == 1.0:
+                return sum_logprobs / max(1, length)
+            denom = ((5.0 + length) / 6.0) ** float(length_penalty)
+            return sum_logprobs / denom
+
+        for _ in range(max_new_tokens):
+            candidate_beams = []
+            for tokens, sum_lp, _ in beams:
+                # Forward for this beam
+                if tokens.size(1) > self.params.max_seq_len:
+                    cond = tokens[:, -self.params.max_seq_len:]
+                else:
+                    cond = tokens
+                logits, _ = self(cond)
+                logits = logits[:, -1, :].squeeze(0)  # (V)
+
+                # Repetition penalty on this beam
+                logits = apply_rep_penalty(logits, tokens)
+
+                # Convert to log-probs
+                log_probs = F.log_softmax(logits, dim=-1)  # (V)
+
+                # Take top candidates per beam
+                topk_logp, topk_idx = torch.topk(log_probs, k=num_beams, dim=-1)
+                for lp, next_id in zip(topk_logp.tolist(), topk_idx.tolist()):
+                    next_token = torch.tensor([[next_id]], device=device, dtype=tokens.dtype)
+                    new_tokens = torch.cat((tokens, next_token), dim=1)
+                    new_sum_lp = sum_lp + lp
+                    new_len = new_tokens.size(1)
+
+                    if eos_id is not None and next_id == eos_id:
+                        finished.append((new_tokens, new_sum_lp, new_len))
+                    else:
+                        candidate_beams.append((new_tokens, new_sum_lp, new_len))
+
+            # If we produced only EOS on all beams
+            if not candidate_beams and finished:
+                break
+
+            # Select top beams by normalized score
+            candidate_beams.sort(key=lambda x: norm_score(x[1], x[2]), reverse=True)
+            beams = candidate_beams[:num_beams]
+
+            # Stop as soon as any EOS-terminated hypothesis is produced
+            if eos_id is not None and finished:
+                beams = [max(finished, key=lambda x: norm_score(x[1], x[2]))]
+                break
+
+        # Choose final output
+        if finished:
+            best = max(finished, key=lambda x: norm_score(x[1], x[2]))
+        else:
+            best = max(beams, key=lambda x: norm_score(x[1], x[2]))
+
+        return best[0]
 
 def load_pretrained(checkpoint):
   device = 'cuda' if torch.cuda.is_available() else 'cpu' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
