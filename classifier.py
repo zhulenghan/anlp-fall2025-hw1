@@ -12,7 +12,8 @@ class LlamaZeroShotClassifier(torch.nn.Module):
 		super(LlamaZeroShotClassifier, self).__init__()
 		self.num_labels = config.num_labels
 		self.llama = load_pretrained(config.pretrained_model_path)
-		self.llama.config.use_causal_mask = True
+		self.enable_masks = getattr(config, 'enable_masks', False)
+		self.llama.config.use_causal_mask = self.enable_masks
 		# Zero-shot classification does not require updating llama paramters.
 		for param in self.llama.parameters():
 			param.requires_grad = False
@@ -23,7 +24,8 @@ class LlamaZeroShotClassifier(torch.nn.Module):
 
 	def forward(self, input_ids, padding_mask=None):
 		# compute the completion probability of each label string
-		logits, _ = self.llama(input_ids, padding_mask=padding_mask)
+		mask_arg = padding_mask if (self.enable_masks and padding_mask is not None) else None
+		logits, _ = self.llama(input_ids, padding_mask=mask_arg)
 		log_probabilities = F.log_softmax(logits, dim=-1)
 		label_probabilities = torch.zeros((log_probabilities.shape[0], self.num_labels), device=log_probabilities.device)
 		for i, label_token_ids in enumerate(self.label_name_ids):
@@ -36,7 +38,8 @@ class LlamaEmbeddingClassifier(torch.nn.Module):
 		super(LlamaEmbeddingClassifier, self).__init__()
 		self.num_labels = config.num_labels
 		self.llama = load_pretrained(config.pretrained_model_path)
-		self.llama.config.use_causal_mask = True
+		self.enable_masks = getattr(config, 'enable_masks', False)
+		self.llama.config.use_causal_mask = self.enable_masks
 		# If we use pretrain mode, we freeze Llama parameters.
 		for param in self.llama.parameters():
 			if config.option == 'pretrain':
@@ -56,9 +59,15 @@ class LlamaEmbeddingClassifier(torch.nn.Module):
 		   logits (unnormalized probabilities) over all classes.
 		3) Take the log-softmax of the logits and return log-probabilities over all classes.
 		'''
-		_, hidden_state = self.llama(input_ids, padding_mask=padding_mask)
-		# Extract the hidden state of the final token for classification
-		final_hidden_state = hidden_state[:, -1, :]  # [batch_size, dim]
+		mask_arg = padding_mask if (self.enable_masks and padding_mask is not None) else None
+		_, hidden_state = self.llama(input_ids, padding_mask=mask_arg)
+		# Extract hidden state of the penultimate non-padding token (skip final position)
+		if mask_arg is not None and padding_mask is not None:
+			lengths = padding_mask.sum(dim=1).clamp(min=2).to(device=input_ids.device, dtype=torch.long) - 2
+			gather_index = lengths.view(-1, 1, 1).expand(-1, 1, hidden_state.size(-1))
+			final_hidden_state = hidden_state.gather(1, gather_index).squeeze(1)
+		else:
+			final_hidden_state = hidden_state[:, -2, :]
 		final_hidden_state = self.dropout(final_hidden_state)
 		logits = self.classifier_head(final_hidden_state)
 		log_probabilities = F.log_softmax(logits, dim=-1)

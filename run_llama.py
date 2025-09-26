@@ -97,7 +97,7 @@ def create_data(filename, tokenizer: Tokenizer, flag: str ='train', lower: bool 
 		return data
 
 # perform model evaluation in terms of the accuracy and f1 score.
-def model_eval(dataloader, model, device):
+def model_eval(dataloader, model, device, use_padding_mask=False):
 	model.eval() # switch to eval model, will turn off randomness like dropout
 	y_true = []
 	y_pred = []
@@ -107,10 +107,11 @@ def model_eval(dataloader, model, device):
 		b_mask = batch.get('padding_mask', None)
 
 		b_ids = b_ids.to(device)
-		if b_mask is not None:
+		if use_padding_mask and b_mask is not None:
 			b_mask = b_mask.to(device)
 
-		logits = model(b_ids, b_mask)
+		mask_arg = b_mask if (use_padding_mask and b_mask is not None) else None
+		logits = model(b_ids, mask_arg)
 		logits = logits.detach().cpu().numpy()
 		preds = np.argmax(logits, axis=1).flatten()
 
@@ -177,7 +178,8 @@ def train(args):
 			  'pretrained_model_path': args.pretrained_model_path,
 			  'num_labels': num_labels,
 			  'data_dir': '.',
-			  'option': args.option}
+			  'option': args.option,
+			  'enable_masks': args.enable_masks}
 
 	config = SimpleNamespace(**config)
 
@@ -201,11 +203,12 @@ def train(args):
 
 			b_ids = b_ids.to(device)
 			b_labels = b_labels.to(device)
-			if b_mask is not None:
+			if args.enable_masks and b_mask is not None:
 				b_mask = b_mask.to(device)
 
 			optimizer.zero_grad()
-			logits = model(b_ids, b_mask)
+			mask_arg = b_mask if (args.enable_masks and b_mask is not None) else None
+			logits = model(b_ids, mask_arg)
 			loss = F.nll_loss(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 			loss.backward()
@@ -216,8 +219,8 @@ def train(args):
 
 		train_loss = train_loss / (num_batches)
 
-		train_acc, train_f1, *_ = model_eval(train_dataloader, model, device)
-		dev_acc, dev_f1, *_ = model_eval(dev_dataloader, model, device)
+		train_acc, train_f1, *_ = model_eval(train_dataloader, model, device, use_padding_mask=args.enable_masks)
+		dev_acc, dev_f1, *_ = model_eval(dev_dataloader, model, device, use_padding_mask=args.enable_masks)
 
 		if dev_acc > best_dev_acc:
 			best_dev_acc = dev_acc
@@ -247,7 +250,8 @@ def train_lora(args):
 			  'pretrained_model_path': args.pretrained_model_path,
 			  'num_labels': num_labels,
 			  'data_dir': '.',
-			  'option': 'finetune'}  # Set to finetune so LoRA params can be trained
+			  'option': 'finetune',
+			  'enable_masks': args.enable_masks}  # Set to finetune so LoRA params can be trained
 
 	config = SimpleNamespace(**config)
 
@@ -284,11 +288,12 @@ def train_lora(args):
 
 			b_ids = b_ids.to(device)
 			b_labels = b_labels.to(device)
-			if b_mask is not None:
+			if args.enable_masks and b_mask is not None:
 				b_mask = b_mask.to(device)
 
 			optimizer.zero_grad()
-			logits = model(b_ids, b_mask)
+			mask_arg = b_mask if (args.enable_masks and b_mask is not None) else None
+			logits = model(b_ids, mask_arg)
 			loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
 
 			loss.backward()
@@ -299,8 +304,8 @@ def train_lora(args):
 
 		train_loss = train_loss / (num_batches)
 
-		train_acc, _, _, _, _ = model_eval(train_dataloader, model, device)
-		dev_acc, _, _, _, _ = model_eval(dev_dataloader, model, device)
+		train_acc, _, _, _, _ = model_eval(train_dataloader, model, device, use_padding_mask=args.enable_masks)
+		dev_acc, _, _, _, _ = model_eval(dev_dataloader, model, device, use_padding_mask=args.enable_masks)
 
 		if dev_acc > best_dev_acc:
 			best_dev_acc = dev_acc
@@ -314,7 +319,7 @@ def generate_sentence(args, prefix, outfile, max_new_tokens = 75, temperature = 
 		ctx = torch.amp.autocast(device_type="cuda", dtype=torch.float32) if args.use_gpu else nullcontext()
 		llama = load_pretrained(args.pretrained_model_path)
 		llama = llama.to(device)
-		llama.config.use_causal_mask = True
+		llama.config.use_causal_mask = args.enable_masks
 		print(f"load model from {args.pretrained_model_path}")
 		enc = Tokenizer(args.max_sentence_len)
 
@@ -358,7 +363,8 @@ def test_with_prompting(args):
 				'label_names': label_names,
 				'num_labels': num_labels,
 				'data_dir': '.',
-				'option': args.option}
+				'option': args.option,
+				'enable_masks': args.enable_masks}
 
 		config = SimpleNamespace(**config)
 
@@ -378,8 +384,8 @@ def test_with_prompting(args):
 		test_dataset = LlamaDataset(test_data, args, eos=False)
 		test_dataloader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size, collate_fn=test_dataset.collate_fn)
 
-		dev_acc, dev_f1, dev_pred, dev_true, dev_sents = model_eval(dev_dataloader, model, device)
-		test_acc, test_f1, test_pred, test_true, test_sents = model_eval(test_dataloader, model, device)
+		dev_acc, dev_f1, dev_pred, dev_true, dev_sents = model_eval(dev_dataloader, model, device, use_padding_mask=args.enable_masks)
+		test_acc, test_f1, test_pred, test_true, test_sents = model_eval(test_dataloader, model, device, use_padding_mask=args.enable_masks)
 
 		write_predictions_to_file("dev", args.dev_out, dev_acc, dev_pred, dev_sents)
 		write_predictions_to_file("test", args.test_out, test_acc, test_pred, test_sents)
@@ -394,6 +400,7 @@ def test(args):
         device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
         saved = torch.load(args.filepath)
         config = saved['model_config']
+        setattr(config, 'enable_masks', args.enable_masks)
         model = LlamaEmbeddingClassifier(config)
         model.load_state_dict(saved['model'])
         model = model.to(device)
@@ -410,8 +417,8 @@ def test(args):
         test_dataloader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size, 
                                     collate_fn=test_dataset.collate_fn)
 
-        dev_acc, dev_f1, dev_pred, dev_true, dev_sents = model_eval(dev_dataloader, model, device)
-        test_acc, test_f1, test_pred, test_true, test_sents = model_eval(test_dataloader, model, device)
+        dev_acc, dev_f1, dev_pred, dev_true, dev_sents = model_eval(dev_dataloader, model, device, use_padding_mask=args.enable_masks)
+        test_acc, test_f1, test_pred, test_true, test_sents = model_eval(test_dataloader, model, device, use_padding_mask=args.enable_masks)
     
         write_predictions_to_file("dev", args.dev_out, dev_acc, dev_pred, dev_sents)
         write_predictions_to_file("test", args.test_out, test_acc, test_pred, test_sents)
@@ -442,6 +449,8 @@ def get_args():
 	parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
 	parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
 						default=2e-5)
+	parser.add_argument("--enable_masks", action='store_true',
+						help="Enable attention padding masks and causal mask usage across modes")
 
 	args = parser.parse_args()
 	print(f"args: {vars(args)}")
