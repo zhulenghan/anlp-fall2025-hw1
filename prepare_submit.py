@@ -77,10 +77,14 @@ def main(path: str, aid: str):
     if os.path.isdir(path):
         with zipfile.ZipFile(f"{aid}.zip", 'w') as zz:
             for root, dirs, files in os.walk(path):
+                if '.venv' in dirs:
+                    dirs.remove('.venv')
                 if '.git' in root or '__pycache__' in root:
                     continue  # ignore some parts
                 for file in files:
                     if file.endswith(".zip"):
+                        continue
+                    if file.endswith(".pt"):
                         continue
                     ff = os.path.join(root, file)
                     rpath = os.path.relpath(ff, path)
